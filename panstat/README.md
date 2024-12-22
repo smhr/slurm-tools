@@ -3,10 +3,7 @@ The Slurm tool "panstat" (Panthera status)
 
 Print Slurm nodes status with 1 line per node including job info.
 
-Author: Ole Holm Nielsen <Ole.H.Nielsen \at/ fysik.dtu.dk>
-https://github.com/OleHolmNielsen/Slurm_tools
-
-Modified by S.Mohammad Hosseinirad.
+**panstat** is slightly modified version of **pestat** written by [Ole Holm Nielsen](https://github.com/OleHolmNielsen/Slurm_tools).
 
 Usage
 -----
