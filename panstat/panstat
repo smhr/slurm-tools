@@ -34,7 +34,7 @@ function usage()
 	cat <<EOF
 Usage: panstat [-p partition(s)] [-P] [-u username] [-g groupname] [-A accountname] [-a]
 	[-q qoslist] [-s/-t statelist] [-n/-w hostlist] [-j joblist] [-G] [-N]
-	[-f | -F | -m free_mem | -M free_mem ] [-1|-2] [-d] [-S] [-E] [-T] [-C|-c] [-h]
+	[-f | -F | -m free_mem | -M free_mem ] [-1|-2] [-D] [-S] [-E] [-T] [-C|-c] [-h]
 where:
 	-p partition: Select only partion <partition>
         -P: Include all partitions, including hidden and unavailable ones
@@ -53,7 +53,7 @@ where:
 	-F: Like -f, but only nodes flagged in RED are printed.
 	-m free_mem: Print only nodes with free memory LESS than free_mem GB
 	-M free_mem: Print only nodes with free memory GREATER than free_mem GB (under-utilized)
-	-d: Omit nodes with states: $statedown
+	-D: Also show nodes with states: $statedown
 	-1: Default: Only 1 line per node (unique nodes in multiple partitions are printed once only)
 	-2: 2..N lines per node which participates in multiple partitions 
 	-S: Job StartTime is printed after each JobID/user
@@ -81,10 +81,12 @@ export free_mem_less=-1
 export free_mem_more=-1
 
 # Thresholds for flagging nodes
-export cpuload_delta1=2.0	# CPU load delta from ideal load (RED)
-export cpuload_delta2=0.5	# CPU load delta from ideal load (MAGENTA)
+export cpuload_delta1=4.0	# CPU load delta from ideal load (RED)
+export cpuload_delta2=8.0	# CPU load delta from ideal load (ORANGE)
+export cpuload_delta3=16.0	# CPU load delta from ideal load (YELLOW)
 export memory_thres1=0.1	# Fraction of memory which is free (RED)
 export memory_thres2=0.2	# Fraction of memory which is free (MAGENTA)
+export gpu_thres2=0.5
 
 # Colored output by default:
 export colors=1
@@ -97,7 +99,7 @@ export printallnodes=1
 export uniquenodes=1
 
 # Omit nodes with states: $statedown
-export omitdown=0
+export omitdown=1
 
 # Controls whether GRES (Generic Resources) will be printed
 export printgres=0
@@ -145,7 +147,7 @@ fi
 # Parse command options
 #
 
-while getopts "p:Pu:g:A:q:s:t:n:j:w:m:M:R:aCcdhFf12SETNG" options; do
+while getopts "p:Pu:g:A:q:s:t:n:j:w:m:M:R:aCDdhFf12SETNG" options; do
 	case $options in
 		p )	export partition="-p $OPTARG"
 			echo Print only nodes in partition $OPTARG
@@ -208,8 +210,8 @@ while getopts "p:Pu:g:A:q:s:t:n:j:w:m:M:R:aCcdhFf12SETNG" options; do
 		n|w )	hostlist="-n $OPTARG"
 			echo Select only nodes in hostlist=$OPTARG
 			;;
-		d )	export omitdown=1
-			echo Omit nodes with states: $statedown
+		D )	export omitdown=0
+			echo Also shows nodes with states: $statedown
 			;;
 		j )	joblist=$OPTARG
 			# Check if joblist is running in the Slurm queue and squeue displays job information
@@ -351,8 +353,10 @@ BEGIN {
 	free_mem_more=ENVIRON["free_mem_more"]
 	cpuload_delta1=ENVIRON["cpuload_delta1"]
 	cpuload_delta2=ENVIRON["cpuload_delta2"]
+	cpuload_delta3=ENVIRON["cpuload_delta3"]
 	memory_thres1=ENVIRON["memory_thres1"]
 	memory_thres2=ENVIRON["memory_thres2"]
+	gpu_thres2=ENVIRON["gpu_thres2"]
 	printallnodes=ENVIRON["printallnodes"]
 	omitdown=ENVIRON["omitdown"]
 	statedown=ENVIRON["statedown"]
@@ -371,10 +375,15 @@ BEGIN {
 	# Define terminal colors for the output if requested
 	if (colors != 0) {
 		# See http://en.wikipedia.org/wiki/ANSI_escape_code#Colors
-		RED="\033[1;31m"
+		RED="\033[1;31m\033[48;5;252m"
 		GREEN="\033[1;32m"
 		MAGENTA="\033[1;35m"
+		ORANGE="\033[1;38;5;214m\033[48;5;241m"
+		# YELLOW="\033[1;93m"
+		YELLOW="\033[1;38;5;228m\033[48;5;241m"
+		GRAY="\033[1;30m\033[47m"
 		NORMAL="\033[0m"
+		#NORMAL="\033[1;32m"
 	}
 	# Omit nodes with states: statedown
 	if (omitdown > 0) {
@@ -396,6 +405,7 @@ BEGIN {
 	# The -O output fields must be space-separated, so use :(space) "sufix" and enclose -O fields in '' (octal 047)
 	# Older Slurm versions before 20.02 do not support the "sufix" after -O and may thus not work correctly
 	JOBLIST = prefix "/squeue -t RUNNING -h -O \047State: ,JobID: ,JobArrayID: ,UserName: ,GroupName: ,Account: ,StartTime: ,EndTime: ,TimeUsed: ,Partition: ,NumNodes: ,tres-alloc: ,NodeList: ,Name:\047 " selection
+	#JOBLIST = prefix "/squeue -t RUNNING -h -O State,JobID,JobArrayID,UserName,GroupName,Account,StartTime,EndTime,TimeUsed,Partition,NumNodes,tres-alloc,NodeList,Name" selection
 	while ((JOBLIST | getline) > 0) {
 		JobState=$1
 		JobID=$2
@@ -426,7 +436,9 @@ BEGIN {
 			JobInfo = JobInfo " " User "(" Account ") "
 		}
 		if (printgres == 1) {
-			GRES = RED "(null)" NORMAL	# Default is null GRES in RED color
+			allocated_gpu = 0
+			# GRES = RED "(null)" NORMAL	# Default is null GRES in RED color
+			GRES = "" # Default is ""
 			# Parse the tres-alloc (TresAlloc) list to extract only GPU gres/gpu:
 			split (TresAlloc, treslist, ",")
 			for (i in treslist) {
@@ -435,13 +447,21 @@ BEGIN {
 					# The "generic" GPU field "gres/gpu="
 					# Omit the "gres/" string and start at char 6:
 					GRES = substr(treslist[i],6)
-				} else if (index(treslist[i], "gres/gpu:") > 0) {
-					# The "specific" GPU field "gres/gpu:" overrides the "generic" GPU field
-					# Omit the "gres/" string and start at char 6:
-					GRES = substr(treslist[i],6)
+					match(GRES, /gpu=([0-9]+)/, arr)
+					allocated_gpu = arr[1]
 				}
+				# print(i, treslist[i])
 			}
-			JobInfo = JobInfo GRES " "
+			if (allocated_gpu == 1) {
+				gpucolor = GREEN
+			} else if (allocated_gpu == 2) {
+				gpucolor = YELLOW
+			} else if (allocated_gpu == 3) {
+				gpucolor = ORANGE
+			} else if (allocated_gpu == 4) {
+				gpucolor = RED
+			}	
+			JobInfo = JobInfo gpucolor GRES " " NORMAL
 			# Job GRES width for formatting the width below:
 			if (length(GRES) > jobgreswidth) jobgreswidth = length(GRES)
 		}
@@ -519,11 +539,11 @@ BEGIN {
 	JobInfo = JobInfo " ..."
 	# Print a header line (variable hostnamelength)
 	if (printgres == 1) {	# Print GRES column (if requested)
-		printf("%-*s %15s %8s %7s %8s %8s %8s  %*-s %s\n", hostnamelength, "Hostname", "Partition", "Node", "Num_CPU", "CPUload", "Memsize", "Freemem", nodegreswidth, "GRES/node", "Joblist")
-		printf("%-*s %15s %8s %7s %8s %8s %8s  %*-s %s\n", hostnamelength, "", "", "State", "Use/Tot", "(15min)", "(GB)", "(GB)", nodegreswidth, "", JobInfo)
+		printf("%-*s %15s %8s %7s %9s %8s  %*-s %s\n", hostnamelength, "Hostname", "Partition", "Node", "Num_CPU", "Memsize", "Freemem", nodegreswidth, "GRES/node", "Joblist")
+		printf("%-*s %15s %8s %7s %9s %8s  %*-s %s\n", hostnamelength, "", "", "State", "Use/Tot", "(GB)", "(GB)", nodegreswidth, "", JobInfo)
 	} else {
-		printf("%-*s %15s %8s %7s %8s %8s %8s  %s\n", hostnamelength, "Hostname", "Partition", "Node", "Num_CPU", "CPUload", "Memsize", "Freemem", "Joblist")
-		printf("%-*s %15s %8s %7s %8s %8s %8s  %s\n", hostnamelength, "", "", "State", "Use/Tot", "(15min)", "(GB)", "(GB)", JobInfo)
+		printf("%-*s %15s %8s %7s %9s %8s  %s\n", hostnamelength, "Hostname", "Partition", "Node", "Num_CPU", "Memsize", "Freemem", "Joblist")
+		printf("%-*s %15s %8s %7s %9s %8s  %s\n", hostnamelength, "", "", "State", "Use/Tot", "(GB)", "(GB)", JobInfo)
 	}
 }
 {
@@ -562,6 +582,8 @@ BEGIN {
 	threadspercore=$8
 	# Generic resources (GRES) associated with the node
 	nodegres=$9
+	match(nodegres, /gpu:([0-9]+)/, arr)
+	total_gpu = arr[1]
 
 	# Select only subset of nodes with certain values/states
 	listnode = printallnodes
@@ -572,6 +594,11 @@ BEGIN {
 		}
 	}
 
+	loadflag=" "
+	loadcolor=NORMAL
+	cpucolor=NORMAL
+	gpucolor=NORMAL
+
 	if (free_mem_less > 0) {
 		# Free memory on the node LESS than free_mem_less
 		if (freemem < free_mem_less) listnode++
@@ -579,10 +606,13 @@ BEGIN {
 		# Free memory on the node GREATER than free_mem_more
 		if (freemem > free_mem_more) listnode++
 	} else {
-		if (state == "drain" || state == "drng" || state == "resv" || state == "down" || state == "down~" || state == "error" || state == "comp" || state == "maint" || state == "boot") {
+		if (state == "drain" || state == "drng" || state == "resv" || state == "down" || state == "down~" || state == "down*" || state == "error" || state == "comp" || state == "maint" || state == "boot") {
 			# Flag nodes with status down, drain etc.
 			stateflag="*"
-			statecolor=RED
+			statecolor=GRAY
+			loadcolor=GRAY
+			cpucolor=GRAY
+			gpucolor=GRAY
 			listnode++
 		} else {
 			stateflag=" "
@@ -598,54 +628,87 @@ BEGIN {
 			ideal_load_min = allocated_cores / threadspercore
 			ideal_load_max = allocated_cores
 		}
+
 		# Calculate if cpuload is outside ideal load bounds, plus some deltas
-		if (cpuload > ideal_load_max + cpuload_delta1 || cpuload < ideal_load_min - cpuload_delta1) {
+		# if (cpuload > ideal_load_max + cpuload_delta1 || cpuload < ideal_load_min - cpuload_delta1) {
+		# loadflag=" "
+		# loadcolor=NORMAL
+		# cpucolor=NORMAL
+		# print(allocated_cores, total_cores, cpuload_delta1, cpuload_delta2, cpuload_delta3)
+		# print(threadspercore, total_cores, allocated_cores)
+
+		# Check CPU core utilization
+		# if (allocated_cores > (total_cores - cpuload_delta1)) {
+		# 	loadflag="*"
+		# 	loadcolor=RED
+		# 	cpucolor=RED
+		# 	listnode++
+		# } else if (allocated_cores > (total_cores - cpuload_delta2)) {
+		# 	loadflag="*"
+		# 	loadcolor=ORANGE
+		# 	cpucolor=ORANGE
+		# 	listnode++
+		# } else if (allocated_cores > (total_cores - cpuload_delta3)) {
+		# 	loadflag="*"
+		# 	loadcolor=YELLOW
+		# 	cpucolor=YELLOW
+		# 	listnode++
+		# }
+
+		if (allocated_cores/total_cores >= 0.75) {
 			loadflag="*"
 			loadcolor=RED
-			cpucolor=GREEN
+			cpucolor=RED
 			listnode++
-		} else if (cpuload > ideal_load_max + cpuload_delta2 || cpuload < ideal_load_min - cpuload_delta2) {
+		} else if (allocated_cores/total_cores >= 0.5) {
 			loadflag="*"
-			loadcolor=MAGENTA
-			cpucolor=GREEN
-			if (flaglevel == 1) listnode++
-		} else {
-			loadflag=" "
-			loadcolor=NORMAL
-			cpucolor=NORMAL
-		}
-		# Check CPU core utilization
-		if (numjobs[node] > allocated_cores) {
- 			# Flag unexpected number of jobs: Should be at least 1 task per job
-			jobflag="*"
-			jobcolor=RED
+			loadcolor=ORANGE
+			cpucolor=ORANGE
 			listnode++
-		} else if (state == "mix" && multinodejobs[node] > 0) {
-			# Flag multi-node jobs running on nodes in state==mixed (possibly incorrect node utilization)
-			jobflag="*"
-			jobcolor=MAGENTA
+		} else if (allocated_cores/total_cores >= 0.25) {
+			loadflag="*"
+			loadcolor=YELLOW
+			cpucolor=YELLOW
 			listnode++
-		} else {
-			jobflag=" "
-			jobcolor=NORMAL
 		}
 
-		# Free memory on the node
-		if (freemem < memory*memory_thres1) {	# Very high memory usage (RED)
-			memflag="*"
-			freememcolor=RED
-			memcolor=GREEN
-			listnode++
-		} else if (freemem < memory*memory_thres2) {	# High memory usage (MAGENTA)
-			memflag="*"
-			freememcolor=MAGENTA
-			memcolor=GREEN
-			if (flaglevel == 1) listnode++
-		} else {
-			memflag=" "
-			freememcolor=NORMAL
-			memcolor=NORMAL
-		}
+		# print(allocated_gpu)
+		# if (allocated_gpu == 1) {
+		# 	gpucolor=RED
+		# }
+
+		# # Check CPU core utilization
+		# if (numjobs[node] > allocated_cores) {
+ 		# 	# Flag unexpected number of jobs: Should be at least 1 task per job
+		# 	jobflag="*"
+		# 	jobcolor=RED
+		# 	listnode++
+		# } else if (state == "mix" && multinodejobs[node] > 0) {
+		# 	# Flag multi-node jobs running on nodes in state==mixed (possibly incorrect node utilization)
+		# 	jobflag="*"
+		# 	jobcolor=MAGENTA
+		# 	listnode++
+		# } else {
+		# 	jobflag=" "
+		# 	jobcolor=NORMAL
+		# }
+
+		# # Free memory on the node
+		# if (freemem < memory*memory_thres1) {	# Very high memory usage (RED)
+		# 	memflag="*"
+		# 	freememcolor=RED
+		# 	memcolor=GREEN
+		# 	listnode++
+		# } else if (freemem < memory*memory_thres2) {	# High memory usage (MAGENTA)
+		# 	memflag="*"
+		# 	freememcolor=MAGENTA
+		# 	memcolor=GREEN
+		# 	if (flaglevel == 1) listnode++
+		# } else {
+		# 	memflag=" "
+		# 	freememcolor=NORMAL
+		# 	memcolor=NORMAL
+		# }
 	}
 
 	# Do not flag nodes whose most recently started job was < jobgracetime seconds ago
@@ -657,12 +720,36 @@ BEGIN {
 		
 	if (listnode > 0 && nodewasprinted[node] == 0) {
 		if (uniquenodes > 0) nodewasprinted[node]++	# Count this node (node may be in multiple partitions)
-		printf("%-*s %15s ", hostnamelength, node, partition)
-		printf("%s%7s%1s%s ", statecolor, state, stateflag, NORMAL)
-		printf("%s%3d%s %3d ", cpucolor, allocated_cores, NORMAL, total_cores)
-		printf("%s%7.2f%1s%s ", loadcolor, cpuload, loadflag, NORMAL)
+		# separate good nodes (stateflag == " ") from bad nodes (down, error, etc)
+		if (stateflag == " ") {
+			#print(hostnamelength)
+			#printf("%-*s %15s ", hostnamelength, cpucolor, node, partition)
+			#printf("%-*s%s%16s ", hostnamelength-2, NORMAL, node, partition)
+			if (partition == "gpu") {
+				printf("%s%-*s%16s ", GREEN, hostnamelength, node, partition)
+				printf("%s%7s%1s%s ", statecolor, state, stateflag, NORMAL)
+			} else {
+				printf("%s%-*s%16s ", cpucolor, hostnamelength, node, partition)
+				printf("%s%7s%1s%s ", statecolor, state, stateflag, NORMAL)
+			}
+		} else {
+			printf("%s%-*s%16s%s ", statecolor,hostnamelength,  node, partition, NORMAL)
+		   printf("%s%7s%1s%s ", statecolor, state, stateflag, NORMAL)
+		}
+		printf("%s%3d %3d ", cpucolor, allocated_cores, total_cores)
+		# separate good nodes (stateflag == " ") from bad nodes (down, error, etc)
+		if (stateflag == " ") {
+			# printf("%s%7.2f%1s%s ", loadcolor, cpuload, loadflag, NORMAL)
+			printf("%s ", NORMAL)
+		# } else {
+		# 	printf("%s%7.2f%1s ", loadcolor, cpuload, loadflag)
+		}
 		printf("%s%8d %s%8d%1s%s ", memcolor, memory, freememcolor, freemem, memflag, NORMAL)
-		if (printgres == 1) printf("%*-s ", nodegreswidth, nodegres)
+		# if (printgres == 1) printf("%*-s ", nodegreswidth, nodegres)
+		if (printgres == 1) {
+
+			printf("%s%*-s%s ", gpucolor, nodegreswidth, nodegres, NORMAL)
+		}
 		printf("%s%s%1s%s", jobcolor, jobs[node], jobflag, NORMAL)
 		printf("\n")
 	}
