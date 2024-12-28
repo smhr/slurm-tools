@@ -629,31 +629,7 @@ BEGIN {
 			ideal_load_max = allocated_cores
 		}
 
-		# Calculate if cpuload is outside ideal load bounds, plus some deltas
-		# if (cpuload > ideal_load_max + cpuload_delta1 || cpuload < ideal_load_min - cpuload_delta1) {
-		# loadflag=" "
-		# loadcolor=NORMAL
-		# cpucolor=NORMAL
-		# print(allocated_cores, total_cores, cpuload_delta1, cpuload_delta2, cpuload_delta3)
-		# print(threadspercore, total_cores, allocated_cores)
-
-		# Check CPU core utilization
-		# if (allocated_cores > (total_cores - cpuload_delta1)) {
-		# 	loadflag="*"
-		# 	loadcolor=RED
-		# 	cpucolor=RED
-		# 	listnode++
-		# } else if (allocated_cores > (total_cores - cpuload_delta2)) {
-		# 	loadflag="*"
-		# 	loadcolor=ORANGE
-		# 	cpucolor=ORANGE
-		# 	listnode++
-		# } else if (allocated_cores > (total_cores - cpuload_delta3)) {
-		# 	loadflag="*"
-		# 	loadcolor=YELLOW
-		# 	cpucolor=YELLOW
-		# 	listnode++
-		# }
+		# Calculate if allocated_cores/total_cores is outside a threshold
 
 		if (allocated_cores/total_cores >= 0.75) {
 			loadflag="*"
