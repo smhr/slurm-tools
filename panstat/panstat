@@ -146,7 +146,7 @@ fi
 #
 
 # while getopts "p:Pu:g:A:q:s:t:n:j:w:m:M:R:aCDdhFf12SETNG" options; do
-while getopts "p:Pu:g:A:q:s:t:n:j:w:R:aCDdhFf12SETNG" options; do
+while getopts "p:Pu:g:A:q:s:t:n:j:w:R:aCcDdhFf12SETNG" options; do
 	case $options in
 		p )	export partition="-p $OPTARG"
 			echo Print only nodes in partition $OPTARG
