@@ -235,11 +235,11 @@ while getopts "p:Pu:g:A:q:s:t:n:j:w:R:aCcDdhFf12SETNG" options; do
 			echo "JobName is printed after each JobID"
 			;;
 		f|F )	export flaglevel=1
-			flag_color="(YELLOW, ORANGE OR RED nodes)"
+			flag_color="(YELLOW, ORANGE OR RED)"
 			if test $options = "F"
 			then
 				export flaglevel=2	# Flag RED nodes only
-				flag_color="(RED nodes)"
+				flag_color="(RED)"
 			fi
 			if test $free_mem_less -ge 0 -o $free_mem_more -ge 0
 			then
@@ -247,7 +247,7 @@ while getopts "p:Pu:g:A:q:s:t:n:j:w:R:aCcDdhFf12SETNG" options; do
 				exit -1
 			fi
 			export printallnodes=0
-			echo Print only nodes that are flagged by \* $flag_color
+			echo "Print only $flag_color nodes"
 			;;
 		1 )	export uniquenodes=1
 			echo "Only 1 line per node (Unique nodes in multiple partitions are printed once only)"
