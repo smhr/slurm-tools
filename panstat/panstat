@@ -202,6 +202,9 @@ while getopts "p:Pu:g:A:q:s:t:n:j:w:R:aCDdhFf12SETNG" options; do
 			;;
 		s|t )	statelist="--states $OPTARG"
 			echo Select only nodes with state=$OPTARG
+			if [[ "$OPTARG" == down ]]; then
+				export omitdown=0
+			fi
 			;;
 		R )	export reservationlist="$OPTARG"
 			echo Select only nodes with reservation=$OPTARG
