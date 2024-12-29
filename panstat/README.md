@@ -3,7 +3,7 @@ The Slurm tool "panstat" (Panthera status)
 
 Print Slurm nodes status with 1 line per node including job info.
 
-**panstat** is slightly modified version of **pestat** written by [Ole Holm Nielsen](https://github.com/OleHolmNielsen/Slurm_tools).
+**panstat** is a modified version of **pestat** written by [Ole Holm Nielsen](https://github.com/OleHolmNielsen/Slurm_tools), with focus on users' view of the cluster. In pestat, the focus is on the admin view of the cluster.
 
 Usage
 -----
