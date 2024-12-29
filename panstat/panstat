@@ -49,8 +49,8 @@ where:
 	-j joblist: Print only nodes in job <joblist>
 	-G: Print GRES (Generic Resources) in addition to JobID
 	-N: Print JobName in addition to JobID
-	-f: Print only nodes that are flagged by * (unexpected load etc.)
-	-F: Like -f, but only nodes flagged in RED are printed.
+	-f: Print only nodes with average resources free 
+	-F: Like -f, but only nodes with critically low resources are printed.
 	-D: Also show nodes with states: $statedown
 	-1: Default: Only 1 line per node (unique nodes in multiple partitions are printed once only)
 	-2: 2..N lines per node which participates in multiple partitions 
@@ -235,7 +235,7 @@ while getopts "p:Pu:g:A:q:s:t:n:j:w:R:aCcDdhFf12SETNG" options; do
 			echo "JobName is printed after each JobID"
 			;;
 		f|F )	export flaglevel=1
-			flag_color="(RED and MAGENTA nodes)"
+			flag_color="(YELLOW, ORANGE OR RED nodes)"
 			if test $options = "F"
 			then
 				export flaglevel=2	# Flag RED nodes only
@@ -249,24 +249,6 @@ while getopts "p:Pu:g:A:q:s:t:n:j:w:R:aCcDdhFf12SETNG" options; do
 			export printallnodes=0
 			echo Print only nodes that are flagged by \* $flag_color
 			;;
-		# m )	export free_mem_less=$OPTARG
-		# 	if test $flaglevel -gt 0 -o $free_mem_more -ge 0
-		# 	then
-		# 		echo ERROR: The -f -m -M flags are mutually exclusive
-		# 		exit -1
-		# 	fi
-		# 	export printallnodes=0
-		# 	echo Select only nodes with free memory LESS than $free_mem_less GB
-		# 	;;
-		# M )	export free_mem_more=$OPTARG
-		# 	if test $flaglevel -gt 0 -o $free_mem_less -ge 0
-		# 	then
-		# 		echo ERROR: The -f -m -M flags are mutually exclusive
-		# 		exit -1
-		# 	fi
-		# 	export printallnodes=0
-		# 	echo Select only nodes with free memory GREATER than $free_mem_more GB
-		# 	;;
 		1 )	export uniquenodes=1
 			echo "Only 1 line per node (Unique nodes in multiple partitions are printed once only)"
 			;;
@@ -606,116 +588,73 @@ BEGIN {
 	loadflag=" "
 	loadcolor=NORMAL
 	cpucolor=NORMAL
-	# gpucolor=NORMAL
 
-	if (free_mem_less > 0) {
-		# Free memory on the node LESS than free_mem_less
-		if (freemem < free_mem_less) listnode++
-	} else if (free_mem_more > 0) {
-		# Free memory on the node GREATER than free_mem_more
-		if (freemem > free_mem_more) listnode++
+	if (state == "drain" || state == "drng" || state == "resv" || state == "down" || state == "down~" || state == "down*" || state == "error" || state == "comp" || state == "maint" || state == "boot") {
+		# Flag nodes with status down, drain etc.
+		stateflag="*"
+		statecolor=GRAY
+		loadcolor=GRAY
+		cpucolor=GRAY
+		gpucolor=GRAY
+		listnode++
 	} else {
-		if (state == "drain" || state == "drng" || state == "resv" || state == "down" || state == "down~" || state == "down*" || state == "error" || state == "comp" || state == "maint" || state == "boot") {
-			# Flag nodes with status down, drain etc.
-			stateflag="*"
-			statecolor=GRAY
-			loadcolor=GRAY
-			cpucolor=GRAY
-			gpucolor=GRAY
-			listnode++
-		} else {
-			stateflag=" "
-			statecolor=NORMAL
-		}
-		# Flag unexpected CPU load average on allocated cores
-		if (threadspercore == 1) {
-			# Single thread per core: Ideal load equals number of physical cores.
-			ideal_load_min = allocated_cores
-			ideal_load_max = allocated_cores
-		} else {
-			# Multiple threads per CPU core: Load of 1..threadspercore per physical core is OK.
-			ideal_load_min = allocated_cores / threadspercore
-			ideal_load_max = allocated_cores
-		}
+		stateflag=" "
+		statecolor=NORMAL
+	}
+	
+	nodegrescolor = NORMAL
+	if (total_gpu_in_use == 1) {
+		nodegrescolor = GREEN
+		if (flaglevel < 1) listnode++
+	} else if (total_gpu_in_use == 2) { 
+		nodegrescolor = YELLOW
+		if (flaglevel == 1) listnode++
+	} else if (total_gpu_in_use == 3) {
+		nodegrescolor = ORANGE
+		if (flaglevel == 1) listnode++
+	} else if (total_gpu_in_use == 4) {
+		nodegrescolor = RED
+		if (flaglevel >= 1) listnode++
+	}
+	# Calculate if allocated_cores/total_cores is outside a threshold
 
-		nodegrescolor = NORMAL
-		if (total_gpu_in_use == 1) {
-			nodegrescolor = GREEN
-		} else if (total_gpu_in_use == 2) { 
-			nodegrescolor = YELLOW
-		} else if (total_gpu_in_use == 3) {
-			nodegrescolor = ORANGE
-		} else if (total_gpu_in_use == 4) {
-			nodegrescolor = RED
-		}
-		# Calculate if allocated_cores/total_cores is outside a threshold
-
-		if (allocated_cores/total_cores >= 0.75) {
-			loadflag="*"
-			loadcolor=RED
-			cpucolor=RED
-			listnode++
-		} else if (allocated_cores/total_cores >= 0.5) {
-			loadflag="*"
-			loadcolor=ORANGE
-			cpucolor=ORANGE
-			listnode++
-		} else if (allocated_cores/total_cores >= 0.25) {
-			loadflag="*"
-			loadcolor=YELLOW
-			cpucolor=YELLOW
-			listnode++
-		}
-
-		# print(allocated_gpu)
-		# if (allocated_gpu == 1) {
-		# 	gpucolor=RED
-		# }
-
-		# # Check CPU core utilization
-		# if (numjobs[node] > allocated_cores) {
- 		# 	# Flag unexpected number of jobs: Should be at least 1 task per job
-		# 	jobflag="*"
-		# 	jobcolor=RED
-		# 	listnode++
-		# } else if (state == "mix" && multinodejobs[node] > 0) {
-		# 	# Flag multi-node jobs running on nodes in state==mixed (possibly incorrect node utilization)
-		# 	jobflag="*"
-		# 	jobcolor=MAGENTA
-		# 	listnode++
-		# } else {
-		# 	jobflag=" "
-		# 	jobcolor=NORMAL
-		# }
-
-		# Free memory on the node
-		if (freemem < memory*memory_thres1) {	# High memory usage (RED)
-			memflag=" "
-			freememcolor=RED
-			memcolor=RED
-			listnode++
-		} else if (freemem < memory*memory_thres2) {	# medium memory usage (ORANGE)
-			memflag=" "
-			freememcolor=ORANGE
-			memcolor=ORANGE
-			if (flaglevel == 1) listnode++
-		} else if (freemem < memory*memory_thres3) {	# low memory usage (YELLOW)
-			memflag=" "
-			freememcolor=YELLOW
-			memcolor=YELLOW
-			if (flaglevel == 1) listnode++
-		} else {
-			memflag=" "
-			freememcolor=NORMAL
-			memcolor=NORMAL
-		}
+	if (allocated_cores/total_cores >= 0.75) {
+		loadflag="*"
+		loadcolor=RED
+		cpucolor=RED
+		if (flaglevel >= 1) listnode++
+	} else if (allocated_cores/total_cores >= 0.5) {
+		loadflag="*"
+		loadcolor=ORANGE
+		cpucolor=ORANGE
+		if (flaglevel == 1) listnode++
+	} else if (allocated_cores/total_cores >= 0.25) {
+		loadflag="*"
+		loadcolor=YELLOW
+		cpucolor=YELLOW
+		if (flaglevel == 1) listnode++
 	}
 
-	# Do not flag nodes whose most recently started job was < jobgracetime seconds ago
-	# because Slurm reports the 5-minute load average.
-	if (mostrecentjob[node] > 0 && mostrecentjob[node] < jobgracetime) {
-		# Override the listnode flag which may have been set above
-		listnode = printallnodes
+	# Free memory on the node
+	if (freemem < memory*memory_thres1) {	# High memory usage (RED)
+		memflag=" "
+		freememcolor=RED
+		memcolor=RED
+		if (flaglevel >= 1) listnode++
+	} else if (freemem < memory*memory_thres2) {	# medium memory usage (ORANGE)
+		memflag=" "
+		freememcolor=ORANGE
+		memcolor=ORANGE
+		if (flaglevel == 1) listnode++
+	} else if (freemem < memory*memory_thres3) {	# low memory usage (YELLOW)
+		memflag=" "
+		freememcolor=YELLOW
+		memcolor=YELLOW
+		if (flaglevel == 1) listnode++
+	} else {
+		memflag=" "
+		freememcolor=NORMAL
+		memcolor=NORMAL
 	}
 
 	if (nodegrescolor == NORMAL || nodegrescolor == GREEN) {
