@@ -715,7 +715,7 @@ BEGIN {
 		listnode = printallnodes
 	}
 
-	if (nodegrescolor == NORMAL) {
+	if (nodegrescolor == NORMAL || nodegrescolor == GREEN) {
 		if (cpucolor == RED || memcolor == RED) {
 			nodecolor=RED
 		} else if (cpucolor == ORANGE && memcolor == ORANGE) {
@@ -727,10 +727,10 @@ BEGIN {
 		} else if (cpucolor == YELLOW || memcolor == YELLOW) {
 			nodecolor=YELLOW
 		} else {
-			nodecolor=NORMAL
+			nodecolor=nodegrescolor
 		}
-	} else {
-		nodecolor=nodegrescolor
+	} else if (nodegrescolor == YELLOW || nodegrescolor == ORANGE || nodegrescolor == RED ) {
+			nodecolor=nodegrescolor
 	}
 
 	if (listnode > 0 && nodewasprinted[node] == 0) {
