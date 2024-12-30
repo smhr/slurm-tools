@@ -33,7 +33,7 @@ function usage()
 {
 	cat <<EOF
 Usage: panstat [-p partition(s)] [-P] [-u username] [-g groupname] [-A accountname] [-a]
-	[-q qoslist] [-s/-t statelist] [-n/-w hostlist] [-j joblist] [-G] [-N]
+	[-q qoslist] [-R reservationlist] [-s/-t statelist] [-n/-w hostlist] [-L] [-j joblist] [-G] [-N]
 	[-f | -F ] [-1|-2] [-D] [-S] [-E] [-T] [-C|-c] [-h]
 where:
 	-p partition: Select only partion <partition>
@@ -46,6 +46,7 @@ where:
 	-R reservationlist: Print only node reservations <reservationlist>
 	-s|-t statelist: Print only nodes with state in <statelist> 
 	-n|-w hostlist: Print only nodes in hostlist
+	-L Print job lists on each node
 	-j joblist: Print only nodes in job <joblist>
 	-G: Print GRES (Generic Resources) in addition to JobID
 	-N: Print JobName in addition to JobID
@@ -140,13 +141,16 @@ then
 	source $panstat_CONFIG
 fi
 
+export memreserved=6 # memory reserved for system in GB
+export hmemreserved=100 # memory reserved for headnode in GB
+export showjobs=0 # default is to not show job lists
 #####################################################################################
 #
 # Parse command options
 #
 
 # while getopts "p:Pu:g:A:q:s:t:n:j:w:m:M:R:aCDdhFf12SETNG" options; do
-while getopts "p:Pu:g:A:q:s:t:n:j:w:R:aCcDdhFf12SETNG" options; do
+while getopts "p:Pu:g:A:q:s:t:n:j:w:R:aCcDdhFf12SETNGL" options; do
 	case $options in
 		p )	export partition="-p $OPTARG"
 			echo Print only nodes in partition $OPTARG
@@ -215,7 +219,11 @@ while getopts "p:Pu:g:A:q:s:t:n:j:w:R:aCcDdhFf12SETNG" options; do
 		D )	export omitdown=0
 			echo Also shows nodes with states: $statedown
 			;;
+		L )	export showjobs=1
+			echo Show job lists
+			;;
 		j )	joblist=$OPTARG
+			export showjobs=1
 			# Check if joblist is running in the Slurm queue and squeue displays job information
 			jobfound=`$prefix/squeue -j $joblist -t running -h -O JobID 2>/dev/null`
 			if test $? -ne 0 -o -z "$jobfound"
@@ -229,9 +237,11 @@ while getopts "p:Pu:g:A:q:s:t:n:j:w:R:aCcDdhFf12SETNG" options; do
 			hostlist="-n `$prefix/squeue -j $joblist -t running -h -O NodeList: | (readarray -t ARRAY; IFS=','; echo "${ARRAY[*]}")`"
 			;;
 		G )	export printgres=1
+			export showjobs=1
 			echo "GPU GRES (Generic Resource) is printed after each JobID"
 			;;
 		N )	export printjobname=1
+			export showjobs=1
 			echo "JobName is printed after each JobID"
 			;;
 		f|F )	export flaglevel=1
@@ -256,12 +266,15 @@ while getopts "p:Pu:g:A:q:s:t:n:j:w:R:aCcDdhFf12SETNG" options; do
 			echo "2..N lines per node which participates in multiple partitions"
 			;;
 		S )	export printjobstarttime=1
+			export showjobs=1
 			echo "Job StartTime is printed after each JobID/user"
 			;;
 		E )	export printjobendtime=1
+			export showjobs=1
 			echo "Job EndTime is printed after each JobID/user"
 			;;
 		T )	export printtimeused=1
+			export showjobs=1
 			echo "Job TimeUsed is printed after each JobID/user"
 			;;
 		C )	export colors=1
@@ -345,7 +358,10 @@ BEGIN {
 	omitdown=ENVIRON["omitdown"]
 	statedown=ENVIRON["statedown"]
 	printgres=ENVIRON["printgres"]
+	memreserved=ENVIRON["memreserved"]
+	hmemreserved=ENVIRON["hmemreserved"]
 	nodegreswidth=ENVIRON["nodegreswidth"]
+	showjobs=ENVIRON["showjobs"]
 	jobgreswidth=0
 	printjobname=ENVIRON["printjobname"]
 	printjobstarttime=ENVIRON["printjobstarttime"]
@@ -525,13 +541,24 @@ BEGIN {
 	if (printtimeused == 1) JobInfo = JobInfo " TimeUsed"
 	JobInfo = JobInfo " ..."
 	# Print a header line (variable hostnamelength)
-	if (printgres == 1) {	# Print GRES column (if requested)
-		printf("%-*s %15s %8s %7s %9s %8s  %*-s %s\n", hostnamelength, "Hostname", "Partition", "Node", "Num_CPU", "Memsize", "Freemem", nodegreswidth, "GRES/node", "Joblist")
-		printf("%-*s %15s %8s %7s %9s %8s  %*-s %s\n", hostnamelength, "", "", "State", "Use/Tot", "(GB)", "(GB)", nodegreswidth, "", JobInfo)
+	if (showjobs == 1) {
+		if (printgres == 1) {	# Print GRES column (if requested)
+			printf("%-*s %15s %8s %7s %9s %8s  %*-s %s\n", hostnamelength, "Hostname", "Partition", "Node", "Num_CPU", "Memsize", "Freemem", nodegreswidth, "GRES/node", "Joblist")
+			printf("%-*s %15s %8s %7s %9s %8s  %*-s %s\n", hostnamelength, "", "", "State", "Use/Tot", "(GB)", "(GB)", nodegreswidth, "", JobInfo)
+		} else {
+			printf("%-*s %15s %8s %7s %9s %8s  %s\n", hostnamelength, "Hostname", "Partition", "Node", "Num_CPU", "Memsize", "Freemem", "Joblist")
+			printf("%-*s %15s %8s %7s %9s %8s  %s\n", hostnamelength, "", "", "State", "Use/Tot", "(GB)", "(GB)", JobInfo)
+		} 
 	} else {
-		printf("%-*s %15s %8s %7s %9s %8s  %s\n", hostnamelength, "Hostname", "Partition", "Node", "Num_CPU", "Memsize", "Freemem", "Joblist")
-		printf("%-*s %15s %8s %7s %9s %8s  %s\n", hostnamelength, "", "", "State", "Use/Tot", "(GB)", "(GB)", JobInfo)
+		if (printgres == 1) {	# Print GRES column (if requested)
+			printf("%-*s %15s %8s %7s %9s %8s  %*-s \n", hostnamelength, "Hostname", "Partition", "Node", "Num_CPU", "Memsize", "Freemem", nodegreswidth, "GRES/node")
+			printf("%-*s %15s %8s %7s %9s %8s  %*-s \n", hostnamelength, "", "", "State", "Use/Tot", "(GB)", "(GB)", nodegreswidth, "")
+		} else {
+			printf("%-*s %15s %8s %7s %9s %8s  \n", hostnamelength, "Hostname", "Partition", "Node", "Num_CPU", "Memsize", "Freemem")
+			printf("%-*s %15s %8s %7s %9s %8s  \n", hostnamelength, "", "", "State", "Use/Tot", "(GB)", "(GB)")
+		} 
 	}
+	
 }
 {
 	#####################################################################################
@@ -562,6 +589,11 @@ BEGIN {
 	memory=$5/1024
 	#freemem=$6
 	freemem=$5/1024-$10/1024 # not allocated memory
+	if (node == "en-7-5") {
+		freemem=freemem-hmemreserved
+	} else {
+		freemem=freemem-memreserved
+	}
 	state=$7
 	if (state == "idle~" || state == "drain~") next	# Skip nodes that are powered down (idle~,drain~)
 	gsub("$", "", state)	# Strip "$" for state=maintenance
@@ -707,7 +739,11 @@ BEGIN {
 		if (printgres == 1) {
 			printf("%s%*-s%s ", nodegrescolor, nodegreswidth, nodegres, NORMAL)
 		}
-		printf("%s%s%1s%s", jobcolor, jobs[node], jobflag, NORMAL)
+		if (showjobs == 1) {
+			printf("%s%s%1s%s", jobcolor, jobs[node], jobflag, NORMAL)
+		} else {
+			printf("%s", NORMAL)
+		} 
 		printf("\n")
 	}
 	delete cpulist
