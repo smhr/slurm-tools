@@ -10,27 +10,26 @@ Usage
 
 ```
 Usage: panstat [-p partition(s)] [-P] [-u username] [-g groupname] [-A accountname] [-a]
-	[-q qoslist] [-s/-t statelist] [-n/-w hostlist] [-j joblist] [-G] [-N]
-	[-f | -F | -m free_mem | -M free_mem ] [-1|-2] [-d] [-S] [-E] [-T] [-C|-c] [-h]
+	[-q qoslist] [-R reservationlist] [-s/-t statelist] [-n/-w hostlist] [-L] [-j joblist] [-G] [-N]
+	[-f | -F ] [-1|-2] [-D] [-S] [-E] [-T] [-C|-c] [-h]
 where:
-	-p partition: Select only partion <partition>
+	-p: partition: Select only partion <partition>
         -P: Include all partitions, including hidden and unavailable ones
-	-u username: Print only jobs of a single user <username> 
-	-g groupname: Print only users in UNIX group <groupname>
-	-A accountname: Print only jobs in Slurm account <accountname>
+	-u: username: Print only jobs of a single user <username> 
+	-g: groupname: Print only users in UNIX group <groupname>
+	-A: accountname: Print only jobs in Slurm account <accountname>
 	-a: Print User(Account) information after each JobID
-	-q qoslist: Print only QOS in the qoslist <qoslist>
-	-R reservationlist: Print only node reservations <reservationlist>
-	-s|-t statelist: Print only nodes with state in <statelist> 
-	-n|-w hostlist: Print only nodes in hostlist
-	-j joblist: Print only nodes in job <joblist>
+	-q: qoslist: Print only QOS in the qoslist <qoslist>
+	-R: reservationlist: Print only node reservations <reservationlist>
+	-s|-t: statelist: Print only nodes with state in <statelist> 
+	-n|-w: hostlist: Print only nodes in hostlist
+	-L: Print job lists on each node
+	-j: joblist: Print only nodes in job <joblist>
 	-G: Print GRES (Generic Resources) in addition to JobID
 	-N: Print JobName in addition to JobID
-	-f: Print only nodes that are flagged by * (unexpected load etc.)
-	-F: Like -f, but only nodes flagged in RED are printed.
-	-m free_mem: Print only nodes with free memory LESS than free_mem GB
-	-M free_mem: Print only nodes with free memory GREATER than free_mem GB (under-utilized)
-	-d: Omit nodes with states: down drain drng resv maint boot
+	-f: Print only nodes with average resources free 
+	-F: Like -f, but only nodes with critically low resources are printed.
+	-D: Also show nodes with states: down down~ idle~ alloc# drain drng resv maint boot
 	-1: Default: Only 1 line per node (unique nodes in multiple partitions are printed once only)
 	-2: 2..N lines per node which participates in multiple partitions 
 	-S: Job StartTime is printed after each JobID/user
