@@ -405,8 +405,6 @@ BEGIN {
 	# JOBLIST = prefix "/squeue -t RUNNING -h -O State,JobID,UserName,GroupName,Account,StartTime,EndTime,TimeUsed,Partition,NumNodes,tres-alloc,NodeList,Name " selection
 	# Column size(width)=30 hopefully suffices to separate columns
 	# The -O output fields must be space-separated, so use :(space) "sufix" and enclose -O fields in '' (octal 047)
-	# So, to test in terminal, run:
-	# squeue -t RUNNING -h -O 'State: ,JobID: ,JobArrayID: ,UserName: ,GroupName: ,Account: ,StartTime: ,EndTime: ,TimeUsed: ,Partition: ,NumNodes: ,tres-alloc: ,NodeList: ,Name: ,NumNodes:'
 	# Older Slurm versions before 20.02 do not support the "sufix" after -O and may thus not work correctly
 	JOBLIST = prefix "/squeue -t RUNNING -h -O \047State: ,JobID: ,JobArrayID: ,UserName: ,GroupName: ,Account: ,StartTime: ,EndTime: ,TimeUsed: ,Partition: ,NumNodes: ,tres-alloc: ,NodeList: ,Name: ,NumNodes:\047 " selection
 	#JOBLIST = prefix "/squeue -t RUNNING -h -O State,JobID,JobArrayID,UserName,GroupName,Account,StartTime,EndTime,TimeUsed,Partition,NumNodes,tres-alloc,NodeList,Name" selection
