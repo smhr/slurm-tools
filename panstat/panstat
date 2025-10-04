@@ -143,6 +143,7 @@ fi
 
 export memreserved=6 # memory reserved for system in GB
 export hmemreserved=100 # memory reserved for headnode in GB
+export xmemreserved=1 # memory reserved for system in GB for xeon24 nodes
 export showjobs=0 # default is to not show job lists
 #####################################################################################
 #
@@ -333,7 +334,7 @@ export nodegreswidth=`sinfo -h -N $all_partitions $partition $hostlist $statelis
 # Was: $prefix/sinfo -h -N $partition $hostlist $statelist -o "%N %P %C %O %m %e %t %Z %G" | $my_awk '
 # $prefix/sinfo -h -N $partition $hostlist $statelist -O "NodeList: ,Partition: ,CPUsState: ,CPUsLoad: ,Memory: ,FreeMem: ,StateCompact: ,Threads: ,Gres: " | $my_awk '
 # Column size(width)=30 hopefully suffices to separate columns
-$prefix/sinfo -h -N $all_partitions $partition $hostlist $statelist -O "NodeList:30,Partition:30,CPUsState:30,CPUsLoad:30,Memory:30,FreeMem:30,StateCompact:30,Threads:30,Gres:30,AllocMem:30,GresUsed:50" | $my_awk '
+$prefix/sinfo -h -N $all_partitions $partition $hostlist $statelist -O "NodeList:30,Partition:30,CPUsState:30,CPUsLoad:30,Memory:30,FreeMem:30,StateCompact:30,Threads:30,Gres:30,AllocMem:30,GresUsed:50" | sort -k1,1V -k2,2r| $my_awk '
 BEGIN {
 	#####################################################################################
 	# Initialization
@@ -360,6 +361,7 @@ BEGIN {
 	printgres=ENVIRON["printgres"]
 	memreserved=ENVIRON["memreserved"]
 	hmemreserved=ENVIRON["hmemreserved"]
+	xmemreserved=ENVIRON["xmemreserved"]
 	nodegreswidth=ENVIRON["nodegreswidth"]
 	showjobs=ENVIRON["showjobs"]
 	jobgreswidth=0
@@ -403,6 +405,8 @@ BEGIN {
 	# JOBLIST = prefix "/squeue -t RUNNING -h -O State,JobID,UserName,GroupName,Account,StartTime,EndTime,TimeUsed,Partition,NumNodes,tres-alloc,NodeList,Name " selection
 	# Column size(width)=30 hopefully suffices to separate columns
 	# The -O output fields must be space-separated, so use :(space) "sufix" and enclose -O fields in '' (octal 047)
+	# So, to test in terminal, run:
+	# squeue -t RUNNING -h -O 'State: ,JobID: ,JobArrayID: ,UserName: ,GroupName: ,Account: ,StartTime: ,EndTime: ,TimeUsed: ,Partition: ,NumNodes: ,tres-alloc: ,NodeList: ,Name: ,NumNodes:'
 	# Older Slurm versions before 20.02 do not support the "sufix" after -O and may thus not work correctly
 	JOBLIST = prefix "/squeue -t RUNNING -h -O \047State: ,JobID: ,JobArrayID: ,UserName: ,GroupName: ,Account: ,StartTime: ,EndTime: ,TimeUsed: ,Partition: ,NumNodes: ,tres-alloc: ,NodeList: ,Name: ,NumNodes:\047 " selection
 	#JOBLIST = prefix "/squeue -t RUNNING -h -O State,JobID,JobArrayID,UserName,GroupName,Account,StartTime,EndTime,TimeUsed,Partition,NumNodes,tres-alloc,NodeList,Name" selection
@@ -591,6 +595,8 @@ BEGIN {
 	freemem=$5/1024-$10/1024 # not allocated memory
 	if (node == "en-7-5") {
 		freemem=freemem-hmemreserved
+	} else if (partition == "xeon24") {
+		freemem=freemem-xmemreserved
 	} else {
 		freemem=freemem-memreserved
 	}
